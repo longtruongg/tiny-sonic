@@ -13,12 +13,14 @@ import (
 	_ "github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/programs/system"
 	"github.com/gagliardetto/solana-go/rpc"
+	"github.com/robfig/cron/v3"
+	"golang.org/x/time/rate"
 	"io"
-	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -75,7 +77,7 @@ type SonicProfile struct {
 type SonicToken struct {
 	Code    int64  `json:"-,omitempty"`
 	Data    Data   `json:"data"`
-	Status  string `json:"-,omitempty"`
+	Status  string `json:"-"`
 	Message string `json:"message"`
 }
 
@@ -89,9 +91,9 @@ type Payload struct {
 	PublicEncode string `json:"address_encoded"`
 }
 type CheckInPay struct {
-	Code    int    `json:"-,omitempty"`
+	Code    int    `json:"-"`
 	Message string `json:"message"`
-	Status  string `json:"-,omitempty"`
+	Status  string `json:"-"`
 	Data    struct {
 		Hash string `json:"hash"`
 	} `json:"data"`
@@ -133,25 +135,39 @@ type HashType struct {
 func main() {
 
 	//
-	//solClient:=rpc.NewWithCustomRPCClient(
-	//rpc.NewWithLimiter(
-	//	   sonicRpc,
-	//	   rate.Every(time.Second), // time frame
-	//	   5,),
-	//	   )
-	client := &http.Client{}
+	couter := 0
+	c := cron.New(cron.WithLogger(
+		cron.DefaultLogger))
+	solClient := rpc.NewWithCustomRPCClient(
+		rpc.NewWithLimiter(
+			sonicRpc,
+			rate.Every(time.Second), // time frame
+			5),
+	)
 	payer, _ := solana.PrivateKeyFromBase58("prik")
-
-	val, err := sonicTokenResponse(client, payer)
+	val, _ := solClient.GetBalance(context.Background(), payer.PublicKey(), "")
+	fmt.Println("Balance->", val.Value)
+	playerArr, err := loadSonicPlayers()
 	if err != nil {
-		log.Fatalf("cannot get -> %v", err)
+		panic(fmt.Sprintf("cannot load players ->%v", err))
 	}
+	// TODO : fix after :shame:
+	c.AddFunc("@every 3m", func() {
+		for _, val := range playerArr {
 
-	myth, err := claimBoxMyth(client, val)
-	if err != nil {
-		log.Fatalf("mybox->%v", err)
-	}
-	fmt.Println("My->", myth)
+			err := SonicTransfer(solClient, payer, solana.PublicKeyFromBytes([]byte(val.Pub)))
+			if err != nil {
+				panic(fmt.Sprintf("cannot excuted sonic ->%v", err))
+			}
+			couter++
+		}
+		if couter == 100 {
+			fmt.Println("bingo ->", couter)
+		}
+
+	})
+	c.Run()
+
 }
 
 func doTransaction(ctx context.Context, tx string, solClient *rpc.Client, payer solana.PrivateKey) (solana.Signature, error) {
@@ -195,10 +211,11 @@ func requestSonic(ctx context.Context, client *http.Client, token, method, endpo
 	}
 	for k, v := range header {
 		req.Header.Add(k, v[0])
+		if len(token) != 0 {
+			req.Header.Add("Authorization", token)
+		}
 	}
-	if len(token) != 0 {
-		req.Header.Add("Authorization", token)
-	}
+
 	response, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("cannot dorequest ->%v", err)
@@ -277,6 +294,15 @@ func claimBoxMyth(client *http.Client, token string) (interface{}, error) {
 
 	return nil, nil
 
+}
+func checkBalance(ctx context.Context, solClient *rpc.Client) error {
+	val, err := solClient.GetMinimumBalanceForRentExemption(ctx, 0, "")
+	if err != nil {
+		return fmt.Errorf("cannot getMinimum ->%v", err)
+	}
+	res := val / solana.LAMPORTS_PER_SOL
+	fmt.Println("val->", val, res)
+	return fmt.Errorf("minimum balance required for rent exemption: ${%v} SOL", res)
 }
 
 // difference user difference .profile, need interact with filesystem,
@@ -359,17 +385,22 @@ func aboutProfile(ctx context.Context, client *http.Client, token, url string) (
 }
 
 // Todo : will interact with filesystem
-func loadSonicPlayers(pathName string) ([]Player, error) {
+func loadSonicPlayers() ([]Player, error) {
 	var (
 		playerArray []Player
 	)
-	if _, err := os.Stat(pathName); errors.Is(err, os.ErrNotExist) {
+	path, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("cannot get current %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(path, baseFile)); errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("file not exist -> %v", err)
 	}
-	playerDoc, err := os.ReadFile(pathName)
+	playerDoc, err := os.ReadFile(filepath.Join(path, baseFile))
 	if err != nil {
 		return nil, err
 	}
+
 	if err := json.Unmarshal(playerDoc, &playerArray); err != nil {
 		return nil, err
 	}
@@ -383,6 +414,7 @@ func Roll() uint64 {
 		7777,
 		9999,
 		2222,
+		1111,
 	}
 	rand.NewSource(time.Now().UnixNano())
 	return luckedArr[rand.Intn(len(luckedArr))]
@@ -390,18 +422,17 @@ func Roll() uint64 {
 }
 func SonicTransfer(cluster *rpc.Client, payer solana.PrivateKey, toAddr solana.PublicKey) error {
 	//amount := uint64(int64(0.004))
-	recent, err := cluster.GetRecentBlockhash(context.Background(), "")
-	if err != nil {
 
-		return fmt.Errorf("cannot get recent -> %v", err)
+	recent, err := cluster.GetRecentBlockhash(context.Background(), rpc.CommitmentFinalized)
+	if err != nil {
+		return fmt.Errorf("cannot get recent blockHash -> %v", err)
 	}
 	rand.NewSource(time.Now().UnixNano())
 
 	tx, err := solana.NewTransaction(
 		[]solana.Instruction{
 			system.NewTransferInstruction(
-				Roll(),
-				//solana.LAMPORTS_PER_SOL/1000,
+				solana.LAMPORTS_PER_SOL/Roll(),
 				payer.PublicKey(), toAddr).Build(),
 		},
 		recent.Value.Blockhash,
@@ -418,7 +449,7 @@ func SonicTransfer(cluster *rpc.Client, payer solana.PrivateKey, toAddr solana.P
 			return nil
 		})
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	_, err = cluster.SendTransaction(context.Background(), tx)
 	if err != nil {
@@ -434,11 +465,17 @@ type Response struct {
 	Message string `json:"message"`
 }
 
-func solAccount() (interface{}, error) {
+func generatorSolAccounts() (interface{}, error) {
 
-	var payer Player
-	var payerArr []Player
-	fil, err := os.OpenFile(baseFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	var (
+		payer    Player
+		payerArr []Player
+	)
+	path, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("cannot get current %v", err)
+	}
+	fil, err := os.OpenFile(filepath.Join(path, baseFile), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, fmt.Errorf("cannot openfile, check file %v", err)
 	}
