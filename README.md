@@ -5,5 +5,7 @@ For Sonic Odyssey:
 	[x] TxMilestone 
 
  	[x] Claim boxes
-	
+  	
+   	[] Open box Ended
+     
 	[] Mystery NFT not yet
