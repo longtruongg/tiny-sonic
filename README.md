@@ -1,1 +1,9 @@
-with Sonic Odyssey, daily transfer and claim box
+For Sonic Odyssey:
+	
+ 	[x] Checkin daily
+ 
+	[x] TxMilestone 
+
+ 	[x] Claim boxes
+	
+	[] Mystery NFT not yet
