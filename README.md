@@ -6,6 +6,8 @@ For Sonic Odyssey:
 
  	[x] Claim boxes
   	
-   	[] Open box Ended
+   	[-] Open box Ended
      
-	[] Mystery NFT not yet
+	[x] Mystery NFT
+
+    [-] NFT Marketplace 

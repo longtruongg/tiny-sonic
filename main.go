@@ -148,8 +148,6 @@ type HashType struct {
 }
 
 func main() {
-	hash := "AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/E8xs2CPE0uOmioBSDSUH93RToo94H1nkAzRyllUQZ0I2G9vEJl0n2hFQKQ0Uw0ouDCnKd4zNNtP/AzNjMdEMAgAHEtgEBNgybdezaTBTMDOpgQEEYEG/p237hmlX/yuFOS4TppEGsJlpNT3DymDlECA6kzbXdol+jYqU2jVNgp4BoAIdXtiLueqHRv0Uine748zcMITsoClPdG8lGs6yE40kD0VnsHuK8CZ14HJ43xdoRtBQwYd3mnmVq/0Fzv4JhSw6ATZosR7MTccKFqjegg5GO8V1x9fkW0LqpgjpYVmC8FdcY02p+0PRk/8m+UfhW7xEtUoq5hhN0fCFREyHUoPETmSvE5aXPCpQGmkFNhB0JsXpt79f+Ujlop0oDoz0kpdMjtL6QiZoC3LFDcVVIx1RfE15g+8yuboIccK+6ljxuRqdg8XHMcZT3hbS/wam9XbIRTNbiL0bEuEc5vHdbsKyW6c8pKHpuYKbH0QX3EjX1RNTLn58w2vOzHCYsAI7y2Dyq20OfuX3bSr2UtKS70O5gIxZBJM6SkCG55+AVuXl37MAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJHVfBSeFJ1yoNgRNsD1l2mg4UnY0j1tzGoVsJoGPFz7jJclj04kifG7PRApFI4NgwtaE5na/xCEBI572Nvp+FkDBkZv5SEXMv/srbpyw5vnvIzlu8X3EmssQ5s6QAAAAAtwZbHj0XxFOJ1Sf2sEw81YuGxzGqD9tUm20bwD+ClGBqfVFxksXFEhjMlMPUrxf1ja7gibof1E49vZigAAAAAG3fbh12Whk9nL4UbO63msHLSF7V9bN5E6jPWFfv8AqQOAvUW1BJPZC2MBXrPnVjuOuhiKmlIeJ8Ty8s8h985KAgwRAQEAAgoHAwUPEQ0LEAYJCAQrMznhL7aSiaYEAAAAU09QQ//+FQAAAFBnZ1RkU1BKM25pNXhQV1Q4Q2RtNQ4ABQLAXBUA"
-	//
 	//couter := 0
 	//c := cron.New(cron.WithLogger(
 	//	cron.DefaultLogger))
@@ -159,26 +157,21 @@ func main() {
 			rate.Every(time.Second), // time frame
 			5),
 	)
-	//client := &http.Client{}
+	client := &http.Client{}
 	payer, _ := solana.PrivateKeyFromBase58("prik")
-	//token, err := requestSonicAuthor(client, payer)
-	//if err != nil {
-	//	log.Fatal("> tokne err ", err)
-	//}
-	//fmt.Println("token ->", token)
-	//val, err := mintMysteryNFT(
-	//	context.Background(), client, token, solClient, payer,
-	//)
-	//if err != nil {
-	//	log.Fatalf("->cannot get  %s", err)
-	//}
-	//
-	//fmt.Println((val))
-	transaction, err := doTransaction(context.Background(), hash, solClient, payer)
+	token, err := requestSonicAuthor(client, payer)
 	if err != nil {
-		log.Fatalf("doTransaction ->%v", err)
+		log.Fatal("> tokne err ", err)
 	}
-	fmt.Println(transaction)
+	//fmt.Println("token ->", token)
+	val, err := mintMysteryNFT(
+		context.Background(), client, token, solClient, payer,
+	)
+	if err != nil {
+		log.Fatalf("mintNFT -> %v", err)
+	}
+	fmt.Println(val)
+
 }
 
 func doTransaction(ctx context.Context, tx string, solClient *rpc.Client, payer solana.PrivateKey) (solana.Signature, error) {
@@ -190,7 +183,7 @@ func doTransaction(ctx context.Context, tx string, solClient *rpc.Client, payer 
 	if err != nil {
 		return [64]byte{}, fmt.Errorf("cannot get Tx from decoder ->%v", err)
 	}
-	_, err = val.Sign(func(key solana.PublicKey) *solana.PrivateKey {
+	_, err = val.PartialSign(func(key solana.PublicKey) *solana.PrivateKey {
 		if payer.PublicKey().Equals(key) {
 			return &payer
 		}
@@ -215,7 +208,7 @@ func doTransaction(ctx context.Context, tx string, solClient *rpc.Client, payer 
 }
 
 func requestSonic(ctx context.Context, client *http.Client, token, method, endpoint string, data []byte) ([]byte, error) {
-	deadline, cancel := context.WithDeadline(ctx, time.Now().Add(time.Second*5))
+	deadline, cancel := context.WithDeadline(ctx, time.Now().Add(time.Second*6))
 	defer cancel()
 	req, err := http.NewRequestWithContext(deadline, method, endpoint, bytes.NewBuffer(data))
 	if err != nil {
@@ -253,9 +246,9 @@ func requestSonicCheckIn(ctx context.Context, client *http.Client, token string,
 	if err = json.Unmarshal(response, &checkIn); err != nil {
 		return nil, fmt.Errorf("cannot parse response: %w", err)
 	}
-	if checkIn.Status == "fail" {
-		return nil, fmt.Errorf("current account already checked in")
-	}
+	//if checkIn.Status == "fail" {
+	//	return nil, fmt.Errorf("current account already checked in")
+	//}
 	tx, err := doTransaction(ctx, checkIn.Data.Hash, solClient, payer)
 	if err != nil {
 		return nil, fmt.Errorf("cannot excuted requestSonicChecking ->%v", err)
@@ -266,6 +259,7 @@ func requestSonicCheckIn(ctx context.Context, client *http.Client, token string,
 	if err != nil {
 		return nil, fmt.Errorf("cannot marshal -> %v", err)
 	}
+	time.Sleep(6 * time.Second)
 	sonicResp, err := requestSonic(ctx, client, token, http.MethodPost, sonicCheckIn, data)
 	if err != nil {
 		return nil, fmt.Errorf("cannot do request Sonic -> %v", err)
@@ -369,23 +363,30 @@ func getTokenFromProfile(key string) (interface{}, error) {
 	}
 	return str, nil
 }
-func mintMysteryNFT(ctx context.Context, client *http.Client, token string, solClient *rpc.Client, payer solana.PrivateKey) (*TxHashPay, error) {
+func mintMysteryNFT(ctx context.Context, client *http.Client, token string, solClient *rpc.Client, payer solana.PrivateKey) (*solana.Signature, error) {
 	subCtx, cancel := context.WithDeadline(ctx, time.Now().Add(time.Second*5))
 	defer cancel()
 	response, err := requestSonic(subCtx, client, token, http.MethodGet, mythNFT, nil)
 	if err != nil {
-		return nil, fmt.Errorf("cannot request to Sonic ->%", err)
+		return nil, fmt.Errorf("cannot request to Sonic ->%w", err)
 	}
 	var txHash TxHashPay
-	if err = json.Unmarshal(response, &txHash); err != nil {
+	err = json.Unmarshal(response, &txHash)
+	if err != nil {
 		return nil, fmt.Errorf("cannot unmarshal mintMysteryNFT -> %v", err)
 	}
 	val, err := doTransaction(ctx, txHash.Data.Hash, solClient, payer)
 	if err != nil {
 		return nil, fmt.Errorf("doTx mintMysteryNFT -> %v", err)
 	}
-	fmt.Println("val ->", val.String())
-	return &txHash, nil
+	time.Sleep(6 * time.Second)
+	time.AfterFunc(6*time.Second, func() {
+		_, err := solClient.GetSignatureStatuses(context.Background(), false, val)
+		if err != nil {
+			panic(fmt.Errorf("cannot get signature statuses: %v", err))
+		}
+	})
+	return &val, nil
 }
 func requestSonicAuthor(client *http.Client, payer solana.PrivateKey) (string, error) {
 	query := url.Values{
